@@ -1,0 +1,11 @@
+Post "install," these are the things I have done:
+- Things I added to config.php:
+  - 'default_phone_region' => 'US'
+  - 'defaultapp' => 'files,dashboard'
+  - 'preview_max_memory' => 512 (to make previews for large files work)
+  - 'enabledPreviewProviders' array to make previews for specific filetypes
+    - this relies on ffmpeg and imagemagick being installed via custom Dockerfile
+    - also did 'docker exec -it --user www-data nc_app sh' and occ preview:repair, y at prompt, not sure if this was necessary but idk
+  - 'trashbin_retention_obligation' => '30,365'
+  - 'versions_retention_obligation' => '30,365'
+- I added my email smtp stuff manually in the browser UI (didn't want to put the pw in an .env or such)

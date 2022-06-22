@@ -1,0 +1,138 @@
+version: '3'
+
+networks:
+  frontend_v6:
+    external: true
+  backend_v6:
+    external: true
+
+secrets:
+  db_pass:
+    file: ./db_secret.txt
+
+services:
+  db:
+    image: mariadb
+    container_name: ${PREFIX}db${SUFFIX}
+    # see https://dba.stackexchange.com/questions/256427/unable-to-create-tables-with-row-format-compressed
+    # and https://github.com/nextcloud/server/issues/25436
+    # I'm using https://techoverflow.net/2021/08/17/how-to-fix-nextcloud-4047-innodb-refuses-to-write-tables-with-row_formatcompressed-or-key_block_size/
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --skip-innodb-read-only-compressed
+    restart: unless-stopped
+    volumes:
+      # this is a zfs dataset with 16K recordsize
+      - ${VOLS}/db:/var/lib/mysql
+    networks:
+      - backend_v6
+    secrets:
+      - db_pass
+    environment:
+      - MYSQL_PASSWORD_FILE=/run/secrets/db_pass
+      - MYSQL_ROOT_PASSWORD=
+    env_file:
+      - db.env
+
+  redis:
+    image: redis
+    container_name: ${PREFIX}redis${SUFFIX}
+    networks:
+      - backend_v6
+    command: redis-server --requirepass ${REDIS_HOST_PASSWORD}
+    restart: unless-stopped
+    env_file:
+      - redis.env
+
+  app:
+    build: ./app
+    image: nc_app_img
+    container_name: ${PREFIX}app${SUFFIX}
+    restart: unless-stopped
+    volumes:
+      # local NVME for html
+      - ./nc_html:/var/www/html
+      # zfs dataset with 1M recordsize
+      - ${VOLS}/data:/nc_data
+      # place to put external workflow scripts, shared between this and cron container
+      - ./scripts:/opt
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - frontend_v6
+      - backend_v6
+    secrets:
+      - db_pass
+    environment:
+      - MYSQL_PASSWORD_FILE=/run/secrets/db_pass
+    env_file:
+      - db.env
+      - redis.env
+      - nc.env
+    depends_on:
+      - db
+      - redis
+
+# To try next time?
+#  hpb:
+#    build: ./hpb
+#    container_name: ${PREFIX}notify_push${SUFFIX}
+#    image: nextcloud:fpm-alpine
+#    restart: unless-stopped
+#    networks:
+#      - frontend
+#      - backend
+#    ports:
+#      - 7867:7867
+#    environment:
+#      - PORT=7867
+#      - NEXTCLOUD_URL=http://${PREFIX}app${SUFFIX}/
+#      - REDIS_HOST=nc_redis
+#    depends_on:
+#      - redis
+#    volumes:
+#      - ./nc_html:/var/www/html:ro
+#    entrypoint: /var/www/html/custom_apps/notify_push/bin/x86_64/notify_push /var/www/html/config/config.php
+
+  web:
+    build: ./web
+    container_name: ${PREFIX}web${SUFFIX}
+    restart: unless-stopped
+    environment:
+      - VIRTUAL_HOST=cloud.example.tld
+    volumes:
+      - ./nc_html:/var/www/html:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - frontend_v6
+      - backend_v6
+    depends_on:
+      - app
+
+  cron:
+    image: nc_app_img
+    container_name: ${PREFIX}cron${SUFFIX}
+    restart: unless-stopped
+    volumes:
+      - ./nc_html:/var/www/html
+      - ${VOLS}/data:/nc_data
+      # place to put workflow scripts, shared between this and app container
+      - ./scripts:/opt
+    networks:
+      - frontend_v6
+      - backend_v6
+    # tini to take care of zombies from workflow scripts
+    entrypoint: ["/sbin/tini", "--", "/cron.sh"]
+    depends_on:
+      - db
+      - redis
+
+  collabora:
+    image: collabora/code:${COLLAB_TAG}
+    container_name: ${PREFIX}collabora${SUFFIX}
+    restart: unless-stopped
+    env_file:
+      - collabora.env
+    environment:
+      # I think these are still needed because it's behind the proxy
+      - extra_params="--o:ssl.enable=false --o:ssl.termination=true"
+      - dictionaries="en_US es_ES de_DE"
+    networks:
+      - frontend_v6
