@@ -102,7 +102,6 @@ while getopts "hH u: p: m: o: s:" option; do
         o ) # operation
             OPER="$OPTARG" ;;
         s ) # subfolder options
-            # TODO (Qenupve) - rectify with dotfile
             SUBFOLDER_OPTS=1
             SUBFOLDER_PATH="$(echo $OPTARG | egrep -o "SUBFOLDER_PATH=[^,]*" | cut -d "=" -f 2 | tr -dc "[:alnum:]./()_\-")"
             SUBFOLDER_NAME="$(echo $OPTARG | egrep -o "SUBFOLDER_NAME=[^,]*" | cut -d "=" -f 2)"
@@ -130,6 +129,11 @@ case $MODE in
         fi
         ;;
     # TODO (Qenupve) - implement batch mode. For now, do a something like find . -iname="*.jpg" -exec image_rename.sh {} \;
+    "batch" )
+        echo "Batch mode not implemented, for now use something like:"
+        echo "find /path/to/directory -iname=\"*.jpg\" -exec image_rename.sh {} \;"
+        echo
+        ;;&
     * )
         usage; exit 1
         ;;
@@ -146,7 +150,7 @@ echo "##### Input file $IN_PATH #####"
 ### If Nextcloud user provided, get relevant info
 ######
 
-# SUBFOLDER_OPTS trumps DOTFILE, but if NC_USER is set then we need at least one of them
+# SUBFOLDER_OPTS trumps dotfile, but if NC_USER is set then we need at least one of them
 if [ ! -z "$NC_USER" ] && [ "$SUBFOLDER_OPTS" != 1 ]; then
     if [ ! -f "$OUT_BASE/.rename_$NC_USER" ]; then
         # not necessarily an error, we just do not want to rename these files
@@ -154,8 +158,6 @@ if [ ! -z "$NC_USER" ] && [ "$SUBFOLDER_OPTS" != 1 ]; then
         echo "the Nextcloud user $NC_USER has not configured renaming files in the folder $OUT_BASE"
         exit 0
     else
-        # TODO (Qenupve) - not sure I need DOTFILE
-        # DOTFILE=1
         SUBFOLDER_PATH="$(grep SUBFOLDER_PATH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc "[:alnum:]./()_\-")"
         SUBFOLDER_NAME="$(grep SUBFOLDER_NAME $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
         SUBFOLDER_YEAR="$(grep SUBFOLDER_YEAR $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
