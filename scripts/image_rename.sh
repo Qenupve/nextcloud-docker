@@ -158,10 +158,10 @@ if [ ! -z "$NC_USER" ] && [ "$SUBFOLDER_OPTS" != 1 ]; then
         echo "the Nextcloud user $NC_USER has not configured renaming files in the folder $OUT_BASE"
         exit 0
     else
-        SUBFOLDER_PATH="$(grep SUBFOLDER_PATH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc "[:alnum:]./()_\-")"
-        SUBFOLDER_NAME="$(grep SUBFOLDER_NAME $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
-        SUBFOLDER_YEAR="$(grep SUBFOLDER_YEAR $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
-        SUBFOLDER_MONTH="$(grep SUBFOLDER_MONTH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
+        SUBFOLDER_PATH="$(grep ^SUBFOLDER_PATH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc "[:alnum:]./()_\-")"
+        SUBFOLDER_NAME="$(grep ^SUBFOLDER_NAME $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
+        SUBFOLDER_YEAR="$(grep ^SUBFOLDER_YEAR $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
+        SUBFOLDER_MONTH="$(grep ^SUBFOLDER_MONTH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
     fi
 fi
 
