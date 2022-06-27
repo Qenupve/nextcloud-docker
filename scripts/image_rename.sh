@@ -1,40 +1,98 @@
 #!/bin/bash
+# Author: Richard McWhirter (Qenupve)
+# Original date: 2022-02-06
+
 usage() {
-    echo "Usage: $(basename $0) [OPTIONS] <path>"
-    echo "Renames media files uploaded to Nextcloud according to creation date."
-    echo
-    echo "  -u  Nextcloud user, optional and case sensitive"
-    echo "  -p  Nextcloud relative path, necessary for occ files:scan to work"
-    echo "  -m  mode, one of either \"single\" or \"batch\" (BATCH NOT IMPLEMENTED YET), defaults to \"single\""
-    echo "  -o  operation, one of either \"cp\" or \"mv\", defaults to \"cp\""
-    echo "  <path> must be a path to a file in single mode or a directory in batch mode"
-    echo
-    echo "If -u is provided, the script will not rename files unless there is a file named"
-    echo ".rename_<nextcloud-user> file in the base directory of <path>, which can optionally contain"
-    echo "SUBFOLDER_YEAR=1 and SUBFOLDER_MONTH=1 to move renamed files into year/month/ subfolders."
+cat <<EOF
+Usage: $(basename $0) [OPTION]... FILEPATH
+Renames media files according to creation datetime in UTC, with optional
+integration with Nextcloud via the Workflow Scripts app.
+
+  -u  (Nextcloud) user, optional and case sensitive. If provided, subfolder
+      settings must be provided as well.
+  -p  Nextcloud relative path, optional but necessary if using Nextcloud for
+      occ files:scan to work.
+  -m  mode, one of either "single" or "batch" (BATCH NOT IMPLEMENTED YET),
+      defaults to "single".
+  -o  operation, one of either "cp" or "mv", defaults to "cp".
+  -s  subfolder settings, comma separated. Use -H for a list of settings.
+      example: -s SUBFOLDER_NAME=1,SUBFOLDER_YEAR=1
+  -h  print this usage info.
+  -H  print this and additional subfolder settings info.
+  FILE must be a path to a file in single mode or a directory in batch mode.
+EOF
+}
+
+more_usage() {
+cat <<EOF
+If -u is provided, the script will not rename files unless there is either a
+file named .rename_USER in the base directory of FILEPATH or if -s is
+provided. The dotfile (if there is one) will be ignored if -s is provided. The
+dotfile can be empty, in which case the file(s) will be renamed but not moved
+into subfolders. Settings in dotfile must be on separate lines.
+
+Subfolder settings: (format OPTION={allowed values})
+  SUBFOLDER_PATH={case sensitive}
+      **** If provided, all other subfolder options are ignored ****
+      Freeform relative path of subfolder to move photos into. Placeholders
+      NAME, YEAR, QUARTER, and MONTH will be replaced with the corresponding
+      values based on -u and file datetime. Any characters that are not
+      alphanumeric or any of ./()_- are removed. A (very bad, but valid)
+      example:
+        SUBFOLDER_PATH=../photos/QUARTER/apple/the_YEAR/NAME/MONTH/derp
+      Result for -u Alice and input file date of June 30th 2022:
+        ../photos/Q2/apple/the_2022/Alice/06/derp
+  SUBFOLDER_NAME={1|case sensitive}
+      If equals 1, subfolder path will start with NAME provided with -u. If any
+      non-empty STRING is provided, subfolder path will start with
+      CLEAN_STRING, where CLEAN_STRING removes all non alphanumeric chars.
+  SUBFOLDER_YEAR={1}
+      If equals 1, subfolder path will include YEAR, like 2022. If other
+      subfolders are provided, YEAR will appear after NAME and before MONTH or
+      QUARTER.
+  SUBFOLDER_MONTH={1|case insensitive}
+      If equals 1, m, month, or monthly, subfolder path will include MONTH
+      after YEAR, like 05. If equals q, quarter, or quarterly, subfolder
+      path will include QUARTER after YEAR, like Q2. This option
+      enables SUBFOLDER_YEAR even if it is not specified.
+EOF
 }
 
 # function to echo to stderr
-echoerr() { echo "ERROR: $@" 1>&2; }
+echoerr() { echo "ERROR: $@" >&2; }
 
-# TODO - maybe split these up, allow only image or video processing.
+# TODO (Qenupve) - maybe split these up, allow only image or video processing.
 if [ ! -e /usr/bin/identify ] || [ ! -e /usr/bin/ffprobe ]; then
     echoerr "imagemagick and ffmpeg need to be installed."
     exit 1
 fi
 
 ######
-### Parse arguments
+### Initialize and parse arguments
 ######
 
 NC_USER=
 REL_PATH=
+OUT_REL_BASE=
+IN_REL_BASE=
 MODE="single"
 OPER="cp"
 IN_PATH=
 
-while getopts "u: p: m: o:" option; do
+OUT_SUBFOLDERS=
+SUBFOLDER_OPTS=
+DOTFILE=
+SUBFOLDER_PATH=
+SUBFOLDER_NAME=
+SUBFOLDER_YEAR=
+SUBFOLDER_MONTH=
+
+while getopts "hH u: p: m: o: s:" option; do
     case "$option" in
+        h ) # help
+            usage; exit 0 ;;
+        H ) # extended help
+            usage; more_usage; exit 0 ;;
         u ) # user
             NC_USER="$OPTARG";;
         p ) # relative path, used by Nextcloud's occ files:scan
@@ -42,12 +100,21 @@ while getopts "u: p: m: o:" option; do
         m ) # mode
             MODE="$(echo "$OPTARG" | tr [:upper:] [:lower:])";;
         o ) # operation
-            OPER="$OPTARG"
+            OPER="$OPTARG" ;;
+        s ) # subfolder options
+            # TODO (Qenupve) - rectify with dotfile
+            SUBFOLDER_OPTS=1
+            SUBFOLDER_PATH="$(echo $OPTARG | egrep -o "SUBFOLDER_PATH=[^,]*" | cut -d "=" -f 2 | tr -dc "[:alnum:]./()_\-")"
+            SUBFOLDER_NAME="$(echo $OPTARG | egrep -o "SUBFOLDER_NAME=[^,]*" | cut -d "=" -f 2)"
+            SUBFOLDER_YEAR="$(echo $OPTARG | egrep -o "SUBFOLDER_YEAR=[^,]*" | cut -d "=" -f 2)"
+            SUBFOLDER_MONTH="$(echo $OPTARG | egrep -o "SUBFOLDER_MONTH=[^,]*" | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
+            ;;
     esac
 done
 
 shift $((OPTIND-1))
-IN_PATH="$1"
+# tilde (~) doesn't work in double quotes, so replace it with the calling user's $HOME
+IN_PATH="$(echo "$1" | sed "s#~#$HOME#")"
 
 case $MODE in
     "single" ) # single file mode
@@ -56,12 +123,13 @@ case $MODE in
         fi
         IN_FILENAME=$(basename "$IN_PATH")
         OUT_BASE=$(dirname "$IN_PATH")
-        # sed to correct relative paths for group folders, which is incorrectly reported by Workflow Script app as of v1.7.0
-        OUT_REL_BASE=$(dirname "$REL_PATH" | sed 's/__groupfolders\/[0-9]*\///')
-        IN_REL_BASE="$OUT_REL_BASE"
-        OUT_SUBFOLDERS=
+        if [ ! -z "$REL_PATH" ]; then
+            # sed to correct relative paths for group folders, which is incorrectly reported by Workflow Script app as of v1.7.0
+            OUT_REL_BASE=$(dirname "$REL_PATH" | sed 's/__groupfolders\/[0-9]*\///')
+            IN_REL_BASE="$OUT_REL_BASE"
+        fi
         ;;
-    # TODO - implement batch mode. For now, do a something like find . -iname="*.jpg" -exec image_rename.sh {} \;
+    # TODO (Qenupve) - implement batch mode. For now, do a something like find . -iname="*.jpg" -exec image_rename.sh {} \;
     * )
         usage; exit 1
         ;;
@@ -78,31 +146,18 @@ echo "##### Input file $IN_PATH #####"
 ### If Nextcloud user provided, get relevant info
 ######
 
-if [ ! -z "$NC_USER" ]; then
-    SUBFOLDER_NAME=
-    SUBFOLDER_YEAR=
-    SUBFOLDER_MONTH=
+# SUBFOLDER_OPTS trumps DOTFILE, but if NC_USER is set then we need at least one of them
+if [ ! -z "$NC_USER" ] && [ "$SUBFOLDER_OPTS" != 1 ]; then
     if [ ! -f "$OUT_BASE/.rename_$NC_USER" ]; then
-        # not an error, we just do not want to rename these files
-        # TODO - maybe remove the echo or make a verbose option
+        # not necessarily an error, we just do not want to rename these files
+        # TODO (Qenupve) - maybe remove the echo or make a verbose option
         echo "the Nextcloud user $NC_USER has not configured renaming files in the folder $OUT_BASE"
         exit 0
     else
+        # TODO (Qenupve) - not sure I need DOTFILE
+        # DOTFILE=1
+        SUBFOLDER_PATH="$(grep SUBFOLDER_PATH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc "[:alnum:]./()_\-")"
         SUBFOLDER_NAME="$(grep SUBFOLDER_NAME $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
-        if [ ! -z "$SUBFOLDER_NAME" ]; then
-            if [ "$SUBFOLDER_NAME" = "1" ]; then
-                OUT_SUBFOLDERS="$NC_USER"
-                # OUT_BASE="$OUT_BASE/$NC_USER"
-                # OUT_REL_BASE="$OUT_REL_BASE/$NC_USER"
-            else
-                # use whatever value they want, but sanitize it
-                SUBFOLDER_NAME="$(echo "$SUBFOLDER_NAME" | tr -dc [:alnum:])"
-                OUT_SUBFOLDERS="$SUBFOLDER_NAME"
-                # OUT_BASE="$OUT_BASE/$SUBFOLDER_NAME"
-                # OUT_REL_BASE="$OUT_REL_BASE/$SUBFOLDER_NAME"
-            fi
-        fi
-        # grab these, but wait to process until we have the file's date
         SUBFOLDER_YEAR="$(grep SUBFOLDER_YEAR $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
         SUBFOLDER_MONTH="$(grep SUBFOLDER_MONTH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
     fi
@@ -190,78 +245,114 @@ if [ ! -z "$MODEL" ]; then
 fi
 
 ######
-### Determine if Nextcloud user wants year/month|quarter subfolders
+### Determine subfolders
 ######
 
-if [ ! -z "$NC_USER" ] && [ "$SUBFOLDER_YEAR" = "1" ]; then
-    OUT_SUBFOLDERS="$OUT_SUBFOLDERS/$(date --utc --date="$DATE" +%Y)"
-
-    if [ ! -z "$SUBFOLDER_MONTH" ]; then
-        MONTH="$(date --utc --date="$DATE" +%m)"
-
-        case "$SUBFOLDER_MONTH" in
-            "1"|"month"|"monthly")
-                OUT_SUBFOLDERS="$OUT_SUBFOLDERS/$MONTH" ;;
-            "quarter"|"quarterly")
-                # remove leading zero if present
-                MONTH="$(echo $MONTH | sed 's/^0//')"
-                # integer division ftw
-                OUT_SUBFOLDERS="$OUT_SUBFOLDERS/Q$(( ($MONTH + 2) / 3 ))"
-                ;;
-        esac
+# initialize OUT_SUBFOLDERS with SUBFOLDER_NAME if present
+if [ ! -z "$SUBFOLDER_NAME" ]; then
+    if [ "$SUBFOLDER_NAME" = "1" ] && [ ! -z "$NC_USER" ]; then
+        OUT_SUBFOLDERS="$NC_USER"
+    else
+        # use whatever value they want, but sanitize it
+        SUBFOLDER_NAME="$(echo "$SUBFOLDER_NAME" | tr -dc [:alnum:])"
+        OUT_SUBFOLDERS="$SUBFOLDER_NAME"
     fi
 fi
 
-# add subfolders, squash repeated slashes, and remove trailing slashes
-OUT_BASE="$(echo "$OUT_BASE/$OUT_SUBFOLDERS" | tr -s "/" "/" | sed 's/\/*$//')"
-OUT_REL_BASE="$(echo "$OUT_REL_BASE/$OUT_SUBFOLDERS" | tr -s "/" "/" | sed 's/\/*$//')"
+if [ ! -z "$SUBFOLDER_PATH" ] || [ ! -z "$SUBFOLDER_YEAR" ] || [ ! -z "$SUBFOLDER_MONTH" ]; then
+    YEAR="$(date --utc --date="$DATE" +%Y)"
+    MONTH="$(date --utc --date="$DATE" +%m)"
+    # remove leading zero if present
+    QUARTER="$(echo $MONTH | sed 's/^0//')"
+    # integer division ftw
+    QUARTER="Q$(( ($QUARTER + 2) / 3 ))"
+fi
+
+if [ ! -z "$SUBFOLDER_PATH" ]; then
+    # overwrite OUT_SUBFOLDERS; if SUBFOLDER_NAME was provided, it is no longer part of OUT_SUBFOLDERS
+    OUT_SUBFOLDERS="$(echo $SUBFOLDER_PATH | sed "s/NAME/$NC_USER/; s/YEAR/$YEAR/; s/MONTH/$MONTH/; s/QUARTER/$QUARTER/")"
+else
+    case "$SUBFOLDER_MONTH" in
+        "1"|"month"|"monthly")
+            OUT_SUBFOLDERS="$OUT_SUBFOLDERS/$YEAR/$MONTH" ;;
+        "q"|"quarter"|"quarterly")
+            OUT_SUBFOLDERS="$OUT_SUBFOLDERS/$YEAR/$QUARTER" ;;
+        "" ) # no month/quarter, but check if we want year
+            if [ "$SUBFOLDER_YEAR" = "1" ]; then
+                OUT_SUBFOLDERS="$OUT_SUBFOLDERS/$YEAR"
+            fi
+            ;;
+    esac
+fi
+
+# add subfolders, include leadingd / so the relative base looks absolute, which Nextcloud needs for occ files:scan
+OUT_BASE="$(realpath -m "$OUT_BASE/$OUT_SUBFOLDERS")"
+OUT_REL_BASE="$(realpath -m "/$OUT_REL_BASE/$OUT_SUBFOLDERS")"
 
 OUT_FULLPATH="$OUT_BASE/$FILENAME.$EXT"
 OUT_REL_FULLPATH="$OUT_REL_BASE/$FILENAME.$EXT"
 
 # if file exists, add a three digit "alphabetic number" like ABC to the end. This will allow for 17,576 unique values.
 if [ -e  "$OUT_FULLPATH" ]; then
-    # TODO - check md5sum, if it's the same then just ignore it
-    # TODO - make this more efficient maybe? Probably not often that I'll have hundreds of files with *identical* creation/modified dates, but...
-    COUNTER=0
-    SUFFIX=AAA
-    while [ -e "$OUT_BASE/$FILENAME-$SUFFIX.$EXT" ]; do
-        # terminate if we literally have 17,576 files with the same datetime...
-        if [ SUFFIX = "ZZZ" ]; then
-            echoerr "Could not make a unique filename!"
-            exit 1
+    IN_SHA="$(sha1sum "$IN_PATH" | cut -d " " -f 1)"
+    OUT_SHA="$(sha1sum "$OUT_FULLPATH" | cut -d " " -f 1)"
+    
+    if [ "$OUT_SHA" != "$IN_SHA" ]; then
+        # TODO (Qenupve) - make this more efficient with binary search tree?
+        # Probably not often that I'll have hundreds of files with *identical* creation/modified dates, but it's slow when there are...
+        COUNTER=0
+        SUFFIX="AAA"
+        while [ -e "$OUT_BASE/$FILENAME-$SUFFIX.$EXT" ] && [ "$OUT_SHA" != "$IN_SHA" ]; do
+            # terminate if we literally have 17,576 files with the same datetime...
+            if [ SUFFIX = "ZZZ" ]; then
+                echoerr "Could not make a unique filename!"
+                exit 1
+            fi
+
+            let "COUNTER++"
+            # bc can convert numbers from any input base to any output base
+            # example in my use case: the output is "01 00" for input of 26
+            NUMBER=$(echo "obase=26; ibase=10; $COUNTER" | bc)
+            # make sure NUMBER has three "words," add zero padding on the left if necessary
+            while [ $(echo "$NUMBER" | wc -w) -lt 3 ]; do NUMBER="00 "$NUMBER; done
+            # using %c to print the ascii table characters for a given number, using number + 65 since A = 65
+            SUFFIX=$(echo "$NUMBER" | awk '{ printf "%c%c%c", $1+65, $2+65, $3+65 }')
+
+            # calculate the sha1, if the file doesn't exist that's fine, OUT_SHA be empty but we'll still exit the loop
+            OUT_SHA="$(sha1sum "$OUT_BASE/$FILENAME-$SUFFIX.$EXT" | cut -d " " -f 1)"
+        done
+
+        OUT_FULLPATH="$OUT_BASE/$FILENAME-$SUFFIX.$EXT"
+        OUT_REL_FULLPATH="$OUT_REL_BASE/$FILENAME-$SUFFIX.$EXT"
+    fi
+
+    if [ "$OUT_SHA" = "$IN_SHA" ]; then
+        echo "output already exists and the hashes match"
+        if [ "$OPER" = "mv" ] && [ "$IN_BASE" != "$OUT_BASE" ]; then
+            rm "$IN_PATH"
         fi
-
-        let "COUNTER++"
-        # bc can convert numbers from any input base to any output base
-        # example in my use case: the output is "01 00" for input of 26
-        NUMBER=$(echo "obase=26; ibase=10; $COUNTER" | bc)
-        # make sure NUMBER has three "words," add zero padding on the left if necessary
-        while [ $(echo "$NUMBER" | wc -w) -lt 3 ]; do NUMBER="00 "$NUMBER; done
-        # using %c to print the ascii table characters for a given number, using number + 65 since A = 65
-        SUFFIX=$(echo "$NUMBER" | awk '{ printf "%c%c%c", $1+65, $2+65, $3+65 }')
-    done
-
-    OUT_FULLPATH="$OUT_BASE/$FILENAME-$SUFFIX.$EXT"
-    OUT_REL_FULLPATH="$OUT_REL_BASE/$FILENAME-$SUFFIX.$EXT"
+        exit 0
+    fi
 fi
 
 echo "##### Output file $OUT_FULLPATH #####"
 
 # DO IT!
 mkdir -p "$OUT_BASE"
-if [ "$OPER" = "cp" ]; then
-    cp --preserve=all "$IN_PATH" "$OUT_FULLPATH"
-elif [ "$OPER" = mv ]; then
-    mv "$IN_PATH" "$OUT_FULLPATH"
-else
-    echoerr "Strange... That should have worked."
-    exit 1
-fi
+if [ "$?" = 0 ]; then
+    if [ "$OPER" = "cp" ]; then
+        cp --preserve=all "$IN_PATH" "$OUT_FULLPATH"
+    elif [ "$OPER" = "mv" ]; then
+        mv "$IN_PATH" "$OUT_FULLPATH"
+    fi
 
-if [ "$IN_REL_BASE" != "." ]; then
-    php /var/www/html/occ files:scan --path="$OUT_REL_FULLPATH"
-    # scan the original base folder to detect the absence of original file
-    # Note that this might be slow if there are many other files in this base
-    php /var/www/html/occ files:scan --path="$IN_REL_BASE" --shallow
+    if [ ! -z "$IN_REL_BASE" ]; then
+        php /var/www/html/occ files:scan --path="$OUT_REL_FULLPATH"
+        # scan the original base folder to detect the absence of original file
+        # Note that this might be slow if there are many other files in this base
+        php /var/www/html/occ files:scan --path="$IN_REL_BASE" --shallow
+    fi
+else
+    echoerr "could not create output directory!"
+    exit 1
 fi
