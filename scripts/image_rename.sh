@@ -25,6 +25,7 @@ EOF
 
 more_usage() {
 cat <<EOF
+
 If -u is provided, the script will not rename files unless there is either a
 file named .rename_USER in the base directory of FILEPATH or if -s is
 provided. The dotfile (if there is one) will be ignored if -s is provided. The
@@ -60,12 +61,6 @@ EOF
 
 # function to echo to stderr
 echoerr() { echo "ERROR: $@" >&2; }
-
-# TODO (Qenupve) - maybe split these up, allow only image or video processing.
-if [ ! -e /usr/bin/identify ] || [ ! -e /usr/bin/ffprobe ]; then
-    echoerr "imagemagick and ffmpeg need to be installed."
-    exit 1
-fi
 
 ######
 ### Initialize and parse arguments
@@ -110,6 +105,12 @@ while getopts "hH u: p: m: o: s:" option; do
             ;;
     esac
 done
+
+# TODO (Qenupve) - maybe split these up, allow only image or video processing.
+if [ ! -e /usr/bin/identify ] || [ ! -e /usr/bin/ffprobe ]; then
+    echoerr "imagemagick and ffmpeg need to be installed."
+    exit 1
+fi
 
 shift $((OPTIND-1))
 # tilde (~) doesn't work in double quotes, so replace it with the calling user's $HOME
@@ -330,8 +331,11 @@ if [ -e  "$OUT_FULLPATH" ]; then
 
     if [ "$OUT_SHA" = "$IN_SHA" ]; then
         echo "output already exists and the hashes match"
-        if [ "$OPER" = "mv" ] && [ "$IN_BASE" != "$OUT_BASE" ]; then
+        if [ "$OPER" = "mv" ] && [ "$(dirname "$IN_FILE")" != "$OUT_BASE" ]; then
             rm "$IN_PATH"
+            if [ ! -z "$IN_REL_BASE" ]; then
+                php /var/www/html/occ files:scan --path="$IN_REL_BASE" --shallow
+            fi
         fi
         exit 0
     fi
