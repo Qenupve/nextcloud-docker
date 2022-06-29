@@ -339,7 +339,9 @@ if [ -e  "$OUT_FULLPATH" ]; then
             rm "$IN_PATH"
             if [ ! -z "$IN_REL_BASE" ]; then
                 # indicate base folder needs scanned to detect deletion
-                echo "$IN_REL_BASE" >> /tmp/to_scan.txt
+                if [ -z "$(grep "$IN_REL_BASE" /tmp/to_scan.txt )" ]; then
+                    echo "$IN_REL_BASE" >> /tmp/to_scan.txt
+                fi
             fi
         fi
         exit 0
@@ -361,7 +363,9 @@ if [ "$?" = 0 ]; then
         php /var/www/html/occ files:scan --path="$OUT_REL_FULLPATH"
         # indicate base folder needs scanned to detect the absence of original file
         # Note that this might be slow if there are many other files in this base
-        echo "$IN_REL_BASE" >> /tmp/to_scan.txt
+        if [ -z "$(grep "$IN_REL_BASE" /tmp/to_scan.txt )" ]; then
+            echo "$IN_REL_BASE" >> /tmp/to_scan.txt
+        fi
     fi
 else
     echoerr "could not create output directory!"
