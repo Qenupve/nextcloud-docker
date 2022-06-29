@@ -10,7 +10,9 @@ usage() {
 cat <<EOF
 Usage: $(basename $0) [OPTION]... FILEPATH
 Renames media files according to creation datetime in UTC, with optional
-integration with Nextcloud via the Workflow Scripts app.
+integration with Nextcloud via the Workflow Scripts app. If running with
+Nextcloud, need to set up companion script image_rename_scan.sh as a cron job
+to detect moves/deletions from base folders.
 
   -u  (Nextcloud) user, optional and case sensitive. If provided, subfolder
       settings must be provided as well.
@@ -336,7 +338,8 @@ if [ -e  "$OUT_FULLPATH" ]; then
         if [ "$OPER" = "mv" ] && [ "$(dirname "$IN_FILE")" != "$OUT_BASE" ]; then
             rm "$IN_PATH"
             if [ ! -z "$IN_REL_BASE" ]; then
-                php /var/www/html/occ files:scan --path="$IN_REL_BASE" --shallow
+                # indicate base folder needs scanned to detect deletion
+                echo "$IN_REL_BASE" >> /tmp/to_scan.txt
             fi
         fi
         exit 0
@@ -356,9 +359,9 @@ if [ "$?" = 0 ]; then
 
     if [ ! -z "$IN_REL_BASE" ]; then
         php /var/www/html/occ files:scan --path="$OUT_REL_FULLPATH"
-        # scan the original base folder to detect the absence of original file
+        # indicate base folder needs scanned to detect the absence of original file
         # Note that this might be slow if there are many other files in this base
-        php /var/www/html/occ files:scan --path="$IN_REL_BASE" --shallow
+        echo "$IN_REL_BASE" >> /tmp/to_scan.txt
     fi
 else
     echoerr "could not create output directory!"

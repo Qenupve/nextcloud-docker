@@ -29,6 +29,7 @@ Before runing `docker-compose up -d` or the like, you will have to fill in the e
 If you wish to use zfs, you will also need to create pool(s) and datasets.
 
 Finally, after "installing" with `docker-compose up -d`, these are the additional steps I have taken to configure Nextcloud to my liking:
+- run `docker exec nc_app chown -R www-data /nc_data` and `docker exec nc_app chown -R www-data: /opt` to make them owned correctly. Couldn't do this in the Dockerfile because of bind mounts; the permissions get overwritten by the permissions on the host side of the mount. ([see this](https://docs.docker.com/storage/bind-mounts/#mount-into-a-non-empty-directory-on-the-container) from the Docker docs).
 - Things I added to config.php:
   - `'default_phone_region' => 'US'`
   - `'defaultapp' => 'files,dashboard'`
