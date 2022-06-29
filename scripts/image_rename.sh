@@ -2,6 +2,10 @@
 # Author: Richard McWhirter (Qenupve)
 # Original date: 2022-02-06
 
+######
+### Function definitions
+######
+
 usage() {
 cat <<EOF
 Usage: $(basename $0) [OPTION]... FILEPATH
@@ -62,6 +66,11 @@ EOF
 # function to echo to stderr
 echoerr() { echo "ERROR: $@" >&2; }
 
+stat_date() {
+    # using modification time, since it seems more reliable than birth
+    echo "$(stat -c %y "$1")"
+}
+
 ######
 ### Initialize and parse arguments
 ######
@@ -105,12 +114,6 @@ while getopts "hH u: p: m: o: s:" option; do
             ;;
     esac
 done
-
-# TODO (Qenupve) - maybe split these up, allow only image or video processing.
-if [ ! -e /usr/bin/identify ] || [ ! -e /usr/bin/ffprobe ]; then
-    echoerr "imagemagick and ffmpeg need to be installed."
-    exit 1
-fi
 
 shift $((OPTIND-1))
 # tilde (~) doesn't work in double quotes, so replace it with the calling user's $HOME
@@ -183,7 +186,10 @@ DATE=
 MODEL=
 case $EXT in
     $EXIF_EXTENSIONS )
-        echo "image filetype detected"
+        if [ ! -e /usr/bin/identify ]; then
+            echoerr "imagemagick needs to be installed to process image types with EXIF metadata."
+            exit 1
+        fi
 
         # get as much exif data as we can in a single call to identify, since it's a big slow command
         EXIF_PARTS=$(identify -format "%[exif:DateTime]|%[exif:SubSecTime]|%[exif:OffsetTime]|%[exif:Model]" "$IN_PATH")
@@ -206,28 +212,24 @@ case $EXT in
                 DATE=$DATE" $OFFSET"
             fi
         else
-            echo "nooo can't find picture creation date metadata, will use stat of file"
-            # using modification time, since it seems more reliable than file birth
-            DATE=$(stat -c %y "$IN_PATH")
+            DATE="$(stat_date "$IN_PATH")"
         fi
         ;;
 
     $VID_EXTENSIONS )
-        echo "video filetype detected"
+        if [ ! -e /usr/bin/ffprobe ]; then
+            echoerr "ffmpeg needs to be installed to process video metadata."
+            exit 1
+        fi
 
         DATE=$(ffprobe -v quiet -select_streams v:0 -show_entries stream_tags=creation_time -of default=noprint_wrappers=1:nokey=1 "$IN_PATH")
         if [ -z $DATE ]; then
-            echo "nooo can't find movie creation date metadata, will use stat of file"
-            # using modification time, since it seems more reliable than file birth
-            DATE="$(stat -c %y "$IN_PATH")"
+            DATE="$(stat_date "$IN_PATH")"
         fi
         ;;
 
     $OTHER_EXTENSIONS )
-        echo "other filetype detected"
-
-        # using modification time, since it seems more reliable than file birth
-        DATE=$(stat -c %y "$IN_PATH")
+        DATE="$(stat_date "$IN_PATH")"
         ;;
 
     * )
