@@ -23,6 +23,7 @@ to detect moves/deletions from base folders.
   -o  operation, one of either "cp" or "mv", defaults to "cp".
   -s  subfolder settings, comma separated. Use -H for a list of settings.
       example: -s SUBFOLDER_NAME=1,SUBFOLDER_YEAR=1
+  -a  append a suffix to filename, all non-alphanumeric characters are removed.
   -h  print this usage info.
   -H  print this and additional subfolder settings info.
   FILE must be a path to a file in single mode or a directory in batch mode.
@@ -84,6 +85,7 @@ IN_REL_BASE=
 MODE="single"
 OPER="cp"
 IN_PATH=
+APPEND=
 
 OUT_SUBFOLDERS=
 SUBFOLDER_OPTS=
@@ -93,7 +95,7 @@ SUBFOLDER_NAME=
 SUBFOLDER_YEAR=
 SUBFOLDER_MONTH=
 
-while getopts "hH u: p: m: o: s:" option; do
+while getopts "hH u: p: m: o: s: a:" option; do
     case "$option" in
         h ) # help
             usage; exit 0 ;;
@@ -114,12 +116,15 @@ while getopts "hH u: p: m: o: s:" option; do
             SUBFOLDER_YEAR="$(echo $OPTARG | egrep -o "SUBFOLDER_YEAR=[^,]*" | cut -d "=" -f 2)"
             SUBFOLDER_MONTH="$(echo $OPTARG | egrep -o "SUBFOLDER_MONTH=[^,]*" | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
             ;;
+        a ) # custom suffix to append
+            APPEND="-$(echo "$OPTARG" | tr -dc [:alnum:])"
+            ;;
     esac
 done
 
 shift $((OPTIND-1))
 # tilde (~) doesn't work in double quotes, so replace it with the calling user's $HOME
-IN_PATH="$(echo "$1" | sed "s#~#$HOME#")"
+IN_PATH="$(echo "$1" | sed "s#^~#$HOME#")"
 
 case $MODE in
     "single" ) # single file mode
@@ -178,6 +183,12 @@ fi
 # removes everything before and including the last "." and makes it lowercase
 EXT=$(echo ${IN_FILENAME/*./} | tr [:upper:] [:lower:])
 
+# Google Pixel Camera has some suffixes that I want to keep
+GOOGLE_TYPES="MP|NIGHT|PANO|PHOTOSPHERE|PORTRAIT"
+if [ ! -z "$(echo "$IN_FILENAME" | egrep "($GOOGLE_TYPES).jpg")" ]; then
+    APPEND="$APPEND.$(echo "$IN_FILENAME" | sed -r "s/(.*)($GOOGLE_TYPES)(\.jpg)/\2/" )"
+fi
+
 # extensions supported, separated into two types
 EXIF_EXTENSIONS="@(jpg|jpeg|tiff)"
 VID_EXTENSIONS="@(mp4)"
@@ -202,7 +213,7 @@ case $EXT in
 
         if [ ! -z "$DATE" ]; then
             # change "yyyy:mm:dd" to "yyy-mm-dd" so the date can be understood
-            DATE=$(echo "$DATE" | sed "s/^\([0-9]\{4\}\):\([0-9]\{2\}\):/\1-\2-/")
+            DATE=$(echo "$DATE" | sed -r "s/^([0-9]{4}):([0-9]{2}):/\1-\2-/")
             SUBSEC=$(echo "$EXIF_PARTS" | cut -d "|" -f 2)
             OFFSET=$(echo "$EXIF_PARTS" | cut -d "|" -f 3)
 
@@ -225,7 +236,7 @@ case $EXT in
         fi
 
         DATE=$(ffprobe -v quiet -select_streams v:0 -show_entries stream_tags=creation_time -of default=noprint_wrappers=1:nokey=1 "$IN_PATH")
-        if [ -z $DATE ]; then
+        if [ -z "$DATE" ]; then
             DATE="$(stat_date "$IN_PATH")"
         fi
         ;;
@@ -296,8 +307,9 @@ fi
 OUT_BASE="$(realpath -m "$OUT_BASE/$OUT_SUBFOLDERS")"
 OUT_REL_BASE="$(realpath -m "/$OUT_REL_BASE/$OUT_SUBFOLDERS")"
 
-OUT_FULLPATH="$OUT_BASE/$FILENAME.$EXT"
-OUT_REL_FULLPATH="$OUT_REL_BASE/$FILENAME.$EXT"
+# APPEND already has dash and/or dot to space it out from FILENAME
+OUT_FULLPATH="$OUT_BASE/$FILENAME$APPEND.$EXT"
+OUT_REL_FULLPATH="$OUT_REL_BASE/$FILENAME$APPEND.$EXT"
 
 # if file exists, add a three digit "alphabetic number" like ABC to the end. This will allow for 17,576 unique values.
 if [ -e  "$OUT_FULLPATH" ]; then
@@ -309,7 +321,7 @@ if [ -e  "$OUT_FULLPATH" ]; then
         # Probably not often that I'll have hundreds of files with *identical* creation/modified dates, but it's slow when there are...
         COUNTER=0
         SUFFIX="AAA"
-        while [ -e "$OUT_BASE/$FILENAME-$SUFFIX.$EXT" ] && [ "$OUT_SHA" != "$IN_SHA" ]; do
+        while [ -e "$OUT_BASE/$FILENAME-$SUFFIX$APPEND.$EXT" ] && [ "$OUT_SHA" != "$IN_SHA" ]; do
             # terminate if we literally have 17,576 files with the same datetime...
             if [ SUFFIX = "ZZZ" ]; then
                 echoerr "Could not make a unique filename!"
@@ -326,11 +338,11 @@ if [ -e  "$OUT_FULLPATH" ]; then
             SUFFIX=$(echo "$NUMBER" | awk '{ printf "%c%c%c", $1+65, $2+65, $3+65 }')
 
             # calculate the sha1, if the file doesn't exist that's fine, OUT_SHA be empty but we'll still exit the loop
-            OUT_SHA="$(sha1sum "$OUT_BASE/$FILENAME-$SUFFIX.$EXT" | cut -d " " -f 1)"
+            OUT_SHA="$(sha1sum "$OUT_BASE/$FILENAME-$SUFFIX$APPEND.$EXT" | cut -d " " -f 1)"
         done
 
-        OUT_FULLPATH="$OUT_BASE/$FILENAME-$SUFFIX.$EXT"
-        OUT_REL_FULLPATH="$OUT_REL_BASE/$FILENAME-$SUFFIX.$EXT"
+        OUT_FULLPATH="$OUT_BASE/$FILENAME-$SUFFIX$APPEND.$EXT"
+        OUT_REL_FULLPATH="$OUT_REL_BASE/$FILENAME-$SUFFIX$APPEND.$EXT"
     fi
 
     if [ "$OUT_SHA" = "$IN_SHA" ]; then
