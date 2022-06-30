@@ -21,9 +21,8 @@ to detect moves/deletions from base folders.
   -m  mode, one of either "single" or "batch" (BATCH NOT IMPLEMENTED YET),
       defaults to "single".
   -o  operation, one of either "cp" or "mv", defaults to "cp".
-  -s  subfolder settings, comma separated. Use -H for a list of settings.
-      example: -s SUBFOLDER_NAME=1,SUBFOLDER_YEAR=1
-  -a  append a suffix to filename, all non-alphanumeric characters are removed.
+  -s  settings, comma separated. Use -H for a list of settings.
+      example: -s "SUBFOLDER_NAME=1,SUBFOLDER_YEAR=1,APPEND=MyCamera"
   -h  print this usage info.
   -H  print this and additional subfolder settings info.
   FILE must be a path to a file in single mode or a directory in batch mode.
@@ -39,13 +38,24 @@ provided. The dotfile (if there is one) will be ignored if -s is provided. The
 dotfile can be empty, in which case the file(s) will be renamed but not moved
 into subfolders. Settings in dotfile must be on separate lines.
 
-Subfolder settings: (format OPTION={allowed values})
+Settings: (format OPTION={allowed values})
+  APPEND={case sensitive}
+      append a suffix to filename, all non-alphanumeric characters are removed.
+  ABSOLUTE_PATH={case sensitive}
+      **** If provided, all subfolder options are ignored ****
+      **** Mutually exclusive with command line option -p ****
+      Freeform path of folder to move photos into. Placeholders NAME, YEAR,
+      QUARTER, and MONTH will be replaced with the corresponding values based
+      on -u and file datetime. Any characters that are not alphanumeric or any
+      of ./()_- are removed. Note that this disallows the use of ~ for the home
+      directory. A (very bad, but valid) example:
+        ABSOLUTE_PATH=/home/alice/QUARTER/apple/the_YEAR/NAME/MONTH/derp
+      Result for -u Alice and input file date of June 30th 2022:
+        /home/alice/Q2/apple/the_2022/Alice/06/derp
   SUBFOLDER_PATH={case sensitive}
       **** If provided, all other subfolder options are ignored ****
-      Freeform relative path of subfolder to move photos into. Placeholders
-      NAME, YEAR, QUARTER, and MONTH will be replaced with the corresponding
-      values based on -u and file datetime. Any characters that are not
-      alphanumeric or any of ./()_- are removed. A (very bad, but valid)
+      Freeform relative path of subfolder to move photos into. Same placeholder
+      substitution and character set as ABSOLUTE_PATH. A (very bad, but valid)
       example:
         SUBFOLDER_PATH=../photos/QUARTER/apple/the_YEAR/NAME/MONTH/derp
       Result for -u Alice and input file date of June 30th 2022:
@@ -85,17 +95,20 @@ IN_REL_BASE=
 MODE="single"
 OPER="cp"
 IN_PATH=
-APPEND=
 
-OUT_SUBFOLDERS=
-SUBFOLDER_OPTS=
+
+ALLOWED_PATH_CHARS="[:alnum:]./()_\- "
+CMDLINE_SETTINGS=
+APPEND=
 DOTFILE=
+ABSOLUTE_PATH=
+OUT_SUBFOLDERS=
 SUBFOLDER_PATH=
 SUBFOLDER_NAME=
 SUBFOLDER_YEAR=
 SUBFOLDER_MONTH=
 
-while getopts "hH u: p: m: o: s: a:" option; do
+while getopts "hH u: p: m: o: s:" option; do
     case "$option" in
         h ) # help
             usage; exit 0 ;;
@@ -110,14 +123,20 @@ while getopts "hH u: p: m: o: s: a:" option; do
         o ) # operation
             OPER="$OPTARG" ;;
         s ) # subfolder options
-            SUBFOLDER_OPTS=1
-            SUBFOLDER_PATH="$(echo $OPTARG | egrep -o "SUBFOLDER_PATH=[^,]*" | cut -d "=" -f 2 | tr -dc "[:alnum:]./()_\-")"
-            SUBFOLDER_NAME="$(echo $OPTARG | egrep -o "SUBFOLDER_NAME=[^,]*" | cut -d "=" -f 2)"
-            SUBFOLDER_YEAR="$(echo $OPTARG | egrep -o "SUBFOLDER_YEAR=[^,]*" | cut -d "=" -f 2)"
-            SUBFOLDER_MONTH="$(echo $OPTARG | egrep -o "SUBFOLDER_MONTH=[^,]*" | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
-            ;;
-        a ) # custom suffix to append
-            APPEND="-$(echo "$OPTARG" | tr -dc [:alnum:])"
+            CMDLINE_SETTINGS=1
+            if [ ! -z "$(echo "$OPTARG" | grep "APPEND")" ]; then
+                # inside an "if" because we want it to be blank otherwise, not be a singular "-"
+                APPEND="-$(echo "$OPTARG" | egrep -o "APPEND=[^,]*" | cut -d "=" -f 2 | tr -dc "[:alnum:]\-")"
+            fi
+            ABSOLUTE_PATH="$(echo $OPTARG | egrep -o "ABSOLUTE_PATH=[^,]*" | cut -d "=" -f 2 | tr -dc "$ALLOWED_PATH_CHARS")"
+            if [ -z "$ABSOLUTE_PATH" ]; then
+                SUBFOLDER_PATH="$(echo $OPTARG | egrep -o "SUBFOLDER_PATH=[^,]*" | cut -d "=" -f 2 | tr -dc "$ALLOWED_PATH_CHARS")"
+                if [ -z "$SUBFOLDER_PATH" ]; then
+                    SUBFOLDER_NAME="$(echo $OPTARG | egrep -o "SUBFOLDER_NAME=[^,]*" | cut -d "=" -f 2)"
+                    SUBFOLDER_YEAR="$(echo $OPTARG | egrep -o "SUBFOLDER_YEAR=[^,]*" | cut -d "=" -f 2)"
+                    SUBFOLDER_MONTH="$(echo $OPTARG | egrep -o "SUBFOLDER_MONTH=[^,]*" | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
+                fi
+            fi
             ;;
     esac
 done
@@ -161,18 +180,24 @@ echo "##### Input file $IN_PATH #####"
 ### If Nextcloud user provided, get relevant info
 ######
 
-# SUBFOLDER_OPTS trumps dotfile, but if NC_USER is set then we need at least one of them
-if [ ! -z "$NC_USER" ] && [ "$SUBFOLDER_OPTS" != 1 ]; then
+# CMDLINE_SETTINGS trumps dotfile, but if NC_USER is set then we need at least one of them
+if [ ! -z "$NC_USER" ] && [ "$CMDLINE_SETTINGS" != 1 ]; then
     if [ ! -f "$OUT_BASE/.rename_$NC_USER" ]; then
         # not necessarily an error, we just do not want to rename these files
         # TODO (Qenupve) - maybe remove the echo or make a verbose option
         echo "the Nextcloud user $NC_USER has not configured renaming files in the folder $OUT_BASE"
         exit 0
     else
-        SUBFOLDER_PATH="$(grep ^SUBFOLDER_PATH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc "[:alnum:]./()_\-")"
-        SUBFOLDER_NAME="$(grep ^SUBFOLDER_NAME $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
-        SUBFOLDER_YEAR="$(grep ^SUBFOLDER_YEAR $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
-        SUBFOLDER_MONTH="$(grep ^SUBFOLDER_MONTH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
+        APPEND="$(grep ^APPEND $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc [:alnum:])"
+        ABSOLUTE_PATH="$(grep ^ABSOLUTE_PATH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc "$ALLOWED_PATH_CHARS")"
+        if [ -z "$ABSOLUTE_PATH" ]; then
+            SUBFOLDER_PATH="$(grep ^SUBFOLDER_PATH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc "$ALLOWED_PATH_CHARS")"
+            if [ -z "$SUBFOLDER_PATH" ]; then
+                SUBFOLDER_NAME="$(grep ^SUBFOLDER_NAME $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
+                SUBFOLDER_YEAR="$(grep ^SUBFOLDER_YEAR $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
+                SUBFOLDER_MONTH="$(grep ^SUBFOLDER_MONTH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
+            fi
+        fi
     fi
 fi
 
@@ -191,8 +216,8 @@ fi
 
 # extensions supported, separated into two types
 EXIF_EXTENSIONS="@(jpg|jpeg|tiff)"
-VID_EXTENSIONS="@(mp4)"
-OTHER_EXTENSIONS="@(gif|bmp|png)"
+VID_EXTENSIONS="@(mp4|mov)"
+OTHER_EXTENSIONS="@(gif|bmp|png|webp)"
 shopt -s extglob
 
 DATE=
@@ -277,7 +302,7 @@ if [ ! -z "$SUBFOLDER_NAME" ]; then
     fi
 fi
 
-if [ ! -z "$SUBFOLDER_PATH" ] || [ ! -z "$SUBFOLDER_YEAR" ] || [ ! -z "$SUBFOLDER_MONTH" ]; then
+if [ ! -z "$ABSOLUTE_PATH" ] || [ ! -z "$SUBFOLDER_PATH" ] || [ ! -z "$SUBFOLDER_YEAR" ] || [ ! -z "$SUBFOLDER_MONTH" ]; then
     YEAR="$(date --utc --date="$DATE" +%Y)"
     MONTH="$(date --utc --date="$DATE" +%m)"
     # remove leading zero if present
@@ -286,7 +311,14 @@ if [ ! -z "$SUBFOLDER_PATH" ] || [ ! -z "$SUBFOLDER_YEAR" ] || [ ! -z "$SUBFOLDE
     QUARTER="Q$(( ($QUARTER + 2) / 3 ))"
 fi
 
-if [ ! -z "$SUBFOLDER_PATH" ]; then
+if [ ! -z "$ABSOLUTE_PATH" ]; then
+    if [ ! -z "$IN_REL_BASE" ]; then
+        echoerr "absolute path and Nextcloud relative path are mutually exclusive options."
+        exit 1
+    fi
+    OUT_BASE="$(echo $ABSOLUTE_PATH | sed "s/NAME/$NC_USER/; s/YEAR/$YEAR/; s/MONTH/$MONTH/; s/QUARTER/$QUARTER/")"
+    OUT_SUBFOLDERS=
+elif [ ! -z "$SUBFOLDER_PATH" ]; then
     # overwrite OUT_SUBFOLDERS; if SUBFOLDER_NAME was provided, it is no longer part of OUT_SUBFOLDERS
     OUT_SUBFOLDERS="$(echo $SUBFOLDER_PATH | sed "s/NAME/$NC_USER/; s/YEAR/$YEAR/; s/MONTH/$MONTH/; s/QUARTER/$QUARTER/")"
 else
