@@ -218,7 +218,7 @@ fi
 
 # extensions supported, separated into two types
 EXIF_EXTENSIONS="@(jpg|jpeg|tiff)"
-VID_EXTENSIONS="@(mp4|mov)"
+VID_EXTENSIONS="@(mp4|mov|mkv)"
 OTHER_EXTENSIONS="@(gif|bmp|png|webp)"
 shopt -s extglob
 
