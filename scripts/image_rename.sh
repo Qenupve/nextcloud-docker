@@ -188,14 +188,16 @@ if [ ! -z "$NC_USER" ] && [ "$CMDLINE_SETTINGS" != 1 ]; then
         echo "the Nextcloud user $NC_USER has not configured renaming files in the folder $OUT_BASE"
         exit 0
     else
-        APPEND="$(grep ^APPEND $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc [:alnum:])"
-        ABSOLUTE_PATH="$(grep ^ABSOLUTE_PATH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc "$ALLOWED_PATH_CHARS")"
+        if [ ! -z "$(grep ^APPEND "$OUT_BASE/.rename_$NC_USER")" ]; then
+            APPEND="-$(grep ^APPEND "$OUT_BASE/.rename_$NC_USER" | cut -d "=" -f 2 | tr -dc [:alnum:])"
+        fi
+        ABSOLUTE_PATH="$(grep ^ABSOLUTE_PATH "$OUT_BASE/.rename_$NC_USER" | cut -d "=" -f 2 | tr -dc "$ALLOWED_PATH_CHARS")"
         if [ -z "$ABSOLUTE_PATH" ]; then
-            SUBFOLDER_PATH="$(grep ^SUBFOLDER_PATH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr -dc "$ALLOWED_PATH_CHARS")"
+            SUBFOLDER_PATH="$(grep ^SUBFOLDER_PATH "$OUT_BASE/.rename_$NC_USER" | cut -d "=" -f 2 | tr -dc "$ALLOWED_PATH_CHARS")"
             if [ -z "$SUBFOLDER_PATH" ]; then
-                SUBFOLDER_NAME="$(grep ^SUBFOLDER_NAME $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
-                SUBFOLDER_YEAR="$(grep ^SUBFOLDER_YEAR $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2)"
-                SUBFOLDER_MONTH="$(grep ^SUBFOLDER_MONTH $OUT_BASE/.rename_$NC_USER | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
+                SUBFOLDER_NAME="$(grep ^SUBFOLDER_NAME "$OUT_BASE/.rename_$NC_USER" | cut -d "=" -f 2)"
+                SUBFOLDER_YEAR="$(grep ^SUBFOLDER_YEAR "$OUT_BASE/.rename_$NC_USER" | cut -d "=" -f 2)"
+                SUBFOLDER_MONTH="$(grep ^SUBFOLDER_MONTH "$OUT_BASE/.rename_$NC_USER" | cut -d "=" -f 2 | tr [:upper:] [:lower:])"
             fi
         fi
     fi
