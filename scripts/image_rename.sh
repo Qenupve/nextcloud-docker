@@ -262,9 +262,19 @@ case $EXT in
             exit 1
         fi
 
-        DATE=$(ffprobe -v quiet -select_streams v:0 -show_entries stream_tags=creation_time -of default=noprint_wrappers=1:nokey=1 "$IN_PATH")
+        # try to get the date from the video stream
+        DATE=$(ffprobe -v quiet -select_streams v:0 \
+            -show_entries stream_tags=creation_time \
+            -of default=noprint_wrappers=1:nokey=1 "$IN_PATH")
         if [ -z "$DATE" ]; then
-            DATE="$(stat_date "$IN_PATH")"
+            # try to get the date from the audio stream
+            DATE=$(ffprobe -v quiet -select_streams a:0 \
+            -show_entries stream_tags=creation_time \
+            -of default=noprint_wrappers=1:nokey=1 "$IN_PATH")
+            if [ -z "$DATE" ]; then
+                # fallback to stat
+                DATE="$(stat_date "$IN_PATH")"
+            fi
         fi
         ;;
 
