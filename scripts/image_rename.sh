@@ -353,6 +353,7 @@ if [ -e  "$OUT_FULLPATH" ]; then
         # Probably not often that I'll have hundreds of files with *identical* creation/modified dates, but it's slow when there are...
         COUNTER=0
         SUFFIX="AAA"
+        OUT_SHA="$(sha1sum "$OUT_BASE/$FILENAME-$SUFFIX$APPEND.$EXT" | cut -d " " -f 1)"
         while [ -e "$OUT_BASE/$FILENAME-$SUFFIX$APPEND.$EXT" ] && [ "$OUT_SHA" != "$IN_SHA" ]; do
             # terminate if we literally have 17,576 files with the same datetime...
             if [ SUFFIX = "ZZZ" ]; then
