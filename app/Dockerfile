@@ -9,7 +9,6 @@ RUN set -ex; \
         coreutils \
         bash \
         tini \
-# TODO (Qenupve) - add logrotate configs
         logrotate \
 # NOTE (Qenupve) - these were included in the example Dockerfile, but I don't think I need/want them
 #        procps \
@@ -17,6 +16,8 @@ RUN set -ex; \
 #        supervisor \
 #       libreoffice \
     ;
+
+COPY logrotate_image_rename.conf /etc/logrotate.d/image_rename.conf
 
 RUN sed -i 's/pm.max_children =.*/pm.max_children = 120/' /usr/local/etc/php-fpm.d/www.conf; \
     sed -i "s/pm.start_servers =.*/pm.start_servers = 12/" /usr/local/etc/php-fpm.d/www.conf; \
@@ -26,5 +27,5 @@ RUN sed -i 's/pm.max_children =.*/pm.max_children = 120/' /usr/local/etc/php-fpm
     # NOTE (Qenupve) - crontab in base container runs every 5 minute
     # I want it every minute so it quickly runs my Workflow Scripts on new files
     echo '* * * * * php -f /var/www/html/cron.php' > /var/spool/cron/crontabs/www-data; \
-    # TODO (Qenupve): Add logrotate so it doesn't need to be handled on the host.
     echo '* * * * * /opt/image_rename_scan.sh >> /opt/log/image_rename.log 2>&1' >> /var/spool/cron/crontabs/www-data; \
+    echo '0 0 * * * /usr/sbin/logrotate /etc/logrotate.d/image_rename.conf' >> /var/spool/cron/crontabs/root; \
