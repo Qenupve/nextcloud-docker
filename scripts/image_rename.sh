@@ -232,24 +232,30 @@ case $EXT in
         fi
 
         # get as much exif data as we can in a single call to identify, since it's a big slow command
-        EXIF_PARTS=$(identify -format "%[exif:DateTime]|%[exif:SubSecTime]|%[exif:OffsetTime]|%[exif:Model]" "$IN_PATH")
+        EXIF_PARTS=$(identify -format "%[exif:DateTimeOriginal]|%[exif:SubSecTimeOriginal]|%[exif:OffsetTimeOriginal]|%[exif:Model]" "$IN_PATH")
 
-        DATE=$(echo "$EXIF_PARTS" | cut -d "|" -f 1)
         # get the camera model, remove any unwanted characters
         MODEL=$(echo "$EXIF_PARTS" | cut -d "|" -f 4 | tr -d "()\r\f\n" | tr -sc "[:alnum:]" "_")
 
+        DATE="$(echo "$EXIF_PARTS" | cut -d "|" -f 1)"
+        if [ -z "$DATE" ]; then
+            # try to get values without "Original"
+            EXIF_PARTS=$(identify -format "%[exif:DateTime]|%[exif:SubSecTime]|%[exif:OffsetTime]|%[exif:Model]" "$IN_PATH")
+            DATE="$(echo "$EXIF_PARTS" | cut -d "|" -f 1)"
+        fi
+
         if [ ! -z "$DATE" ]; then
             # change "yyyy:mm:dd" to "yyy-mm-dd" so the date can be understood
-            DATE=$(echo "$DATE" | sed -r "s/^([0-9]{4}):([0-9]{2}):/\1-\2-/")
-            SUBSEC=$(echo "$EXIF_PARTS" | cut -d "|" -f 2)
-            OFFSET=$(echo "$EXIF_PARTS" | cut -d "|" -f 3)
+            DATE="$(echo "$DATE" | sed -r "s/^([0-9]{4}):([0-9]{2}):/\1-\2-/")"
+            SUBSEC="$(echo "$EXIF_PARTS" | cut -d "|" -f 2)"
+            OFFSET="$(echo "$EXIF_PARTS" | cut -d "|" -f 3)"
 
             if [ ! -z "$SUBSEC" ]; then
-                DATE=$DATE".$SUBSEC"
+                DATE="$DATE.$SUBSEC"
             fi
 
             if [ ! -z "$OFFSET" ]; then
-                DATE=$DATE" $OFFSET"
+                DATE="$DATE $OFFSET"
             fi
         else
             DATE="$(stat_date "$IN_PATH")"
