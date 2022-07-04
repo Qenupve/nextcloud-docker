@@ -28,17 +28,7 @@ return 301 $scheme://$host:$server_port/index.php/.well-known/nodeinfo;
 Before runing `docker-compose up -d` or the like, you will have to fill in the empty or placeholder passwords, domains, etc.
 If you wish to use zfs, you will also need to create pool(s) and datasets.
 
-Finally, after "installing" with `docker-compose up -d`, these are the additional steps I have taken to configure Nextcloud to my liking:
-- run `docker exec nc_app chown -R www-data /nc_data` and `docker exec nc_app chown -R www-data: /opt` to make them owned correctly. Couldn't do this in the Dockerfile because of bind mounts; the permissions get overwritten by the permissions on the host side of the mount. ([see this](https://docs.docker.com/storage/bind-mounts/#mount-into-a-non-empty-directory-on-the-container) from the Docker docs).
-- Things I added to config.php:
-  - `'default_phone_region' => 'US'`
-  - `'defaultapp' => 'files,dashboard'`
-  - `'preview_max_memory' => 512` (to make previews for large files work)
-  - `'enabledPreviewProviders'` array to make previews for specific filetypes
-    - this relies on ffmpeg and imagemagick being installed via custom Dockerfile
-    - I had some pictures already uploaded by this point, so I ran `docker exec -it --user www-data nc_app sh` and `php occ preview:repair`, y at prompt, not sure if this was necessary but idk
-  - `'trashbin_retention_obligation' => '30,365'`
-  - `'versions_retention_obligation' => '30,365'`
-- I added my email smtp stuff manually in the browser UI (didn't want to put the pw in an .env or such)
+Finally, after running `docker-compose up -d` run `./before_install.sh` to get folder permisisons right and remove some junk in the Nextcloud skeleton directory.
+Once done, install in the browser like normal, then run `./post_first_up.sh` to automatically set much of the configuraiton. Final touch is to set the email smtp settings in the web interface (I don't like putting those settings in a .env).
 
 I banged out the image_rename.sh in a few days and set it up with the [Workflow Scripts](https://apps.nextcloud.com/apps/workflow_script) app. That script is the part of this repo that is most likely to change at this point, and it is very much tailored to my use case.
