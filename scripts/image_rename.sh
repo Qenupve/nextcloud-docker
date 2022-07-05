@@ -398,7 +398,7 @@ if [ -e  "$OUT_FULLPATH" ]; then
 
     if [ "$OUT_SHA" = "$IN_SHA" ]; then
         echo "output already exists and the hashes match"
-        if [ "$OPER" = "mv" ] && [ "$(dirname "$IN_FILE")" != "$OUT_BASE" ]; then
+        if [ "$OPER" = "mv" ] && [ "$IN_PATH" != "$OUT_FULLPATH" ]; then
             rm "$IN_PATH"
             if [ ! -z "$IN_REL_BASE" ]; then
                 # indicate base folder needs scanned to detect deletion
