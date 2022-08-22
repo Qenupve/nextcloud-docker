@@ -1,14 +1,10 @@
 version: '3'
 
 networks:
-  frontend_v6:
+  frontend:
     external: true
-  backend_v6:
+  backend:
     external: true
-
-secrets:
-  db_pass:
-    file: ./db_secret.txt
 
 services:
   db:
@@ -23,11 +19,9 @@ services:
       # this is a zfs dataset with 16K recordsize
       - ${VOLS}/db:/var/lib/mysql
     networks:
-      - backend_v6
-    secrets:
-      - db_pass
+      - backend
     environment:
-      - MYSQL_PASSWORD_FILE=/run/secrets/db_pass
+      - MYSQL_PASSWORD=
       - MYSQL_ROOT_PASSWORD=
     env_file:
       - db.env
@@ -36,7 +30,7 @@ services:
     image: redis
     container_name: ${PREFIX}redis${SUFFIX}
     networks:
-      - backend_v6
+      - backend
     command: redis-server --requirepass ${REDIS_HOST_PASSWORD}
     restart: unless-stopped
     env_file:
@@ -56,12 +50,10 @@ services:
       - ./scripts:/opt
       - /etc/localtime:/etc/localtime:ro
     networks:
-      - frontend_v6
-      - backend_v6
-    secrets:
-      - db_pass
+      - frontend
+      - backend
     environment:
-      - MYSQL_PASSWORD_FILE=/run/secrets/db_pass
+      - MYSQL_PASSWORD=
     env_file:
       - db.env
       - redis.env
@@ -73,7 +65,7 @@ services:
 # To try next time?
 #  hpb:
 #    build: ./hpb
-#    container_name: ${PREFIX}notify_push${SUFFIX}
+#    container_name: ${PREFIX}hpb${SUFFIX}
 #    image: nextcloud:fpm-alpine
 #    restart: unless-stopped
 #    networks:
@@ -101,8 +93,8 @@ services:
       - ./nc_html:/var/www/html:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
-      - frontend_v6
-      - backend_v6
+      - frontend
+      - backend
     depends_on:
       - app
 
@@ -116,8 +108,7 @@ services:
       # place to put workflow scripts, shared between this and app container
       - ./scripts:/opt
     networks:
-      - frontend_v6
-      - backend_v6
+      - backend
     # tini to take care of zombies from workflow scripts
     entrypoint: ["/sbin/tini", "--", "/cron.sh"]
     depends_on:
@@ -127,12 +118,18 @@ services:
   collabora:
     image: collabora/code:${COLLAB_TAG}
     container_name: ${PREFIX}collabora${SUFFIX}
+    hostname: ${PREFIX}collabora${SUFFIX}
     restart: unless-stopped
+    expose:
+      - "9800"
+    ports:
+      - 9800:9800
     env_file:
       - collabora.env
     environment:
       # I think these are still needed because it's behind the proxy
-      - extra_params="--o:ssl.enable=false --o:ssl.termination=true"
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
+      - aliasgroup1=https://cloud\.example\.tld:443
       - dictionaries="en_US es_ES de_DE"
     networks:
-      - frontend_v6
+      - frontend

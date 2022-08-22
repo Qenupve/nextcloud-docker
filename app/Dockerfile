@@ -1,4 +1,4 @@
-FROM nextcloud:24.0.2-fpm-alpine
+FROM nextcloud:24.0.4-fpm-alpine
 
 # NOTE (Qenupve) - taken from nextcloud/docker GitHub, in .examples/dockerfiles/full/fpm-alpine/Dockerfile
 RUN set -ex; \
@@ -19,8 +19,6 @@ RUN set -ex; \
 
 COPY logrotate_image_rename.conf /etc/logrotate.d/image_rename.conf
 
-# custom cron stuff
-COPY cron-entry.sh /
 # NOTE: this overwrites the default crontab
 COPY crontab_www-data /var/spool/cron/crontabs/www-data
 # root crontab for logrotate of image_rename.log
