@@ -19,10 +19,11 @@ services:
       # this is a zfs dataset with 16K recordsize
       - ${VOLS}/db:/var/lib/mysql
     networks:
-      - backend
+      backend:
+        ipv4_address: 172.X.X.X #CHANGEME
     environment:
-      - MYSQL_PASSWORD=
-      - MYSQL_ROOT_PASSWORD=
+      - MYSQL_PASSWORD=#CHANGEME
+      - MYSQL_ROOT_PASSWORD=#CHANGEME
     env_file:
       - db.env
 
@@ -30,7 +31,8 @@ services:
     image: redis
     container_name: ${PREFIX}redis${SUFFIX}
     networks:
-      - backend
+      backend:
+        ipv4_address: 172.X.X.X #CHANGEME
     command: redis-server --requirepass ${REDIS_HOST_PASSWORD}
     restart: unless-stopped
     env_file:
@@ -50,10 +52,11 @@ services:
       - ./scripts:/opt
       - /etc/localtime:/etc/localtime:ro
     networks:
-      - frontend
-      - backend
+      frontend:
+        ipv4_address: 172.X.X.X #CHANGEME
+      backend:
     environment:
-      - MYSQL_PASSWORD=
+      - MYSQL_PASSWORD=#CHANGEME
     env_file:
       - db.env
       - redis.env
@@ -93,8 +96,9 @@ services:
       - ./nc_html:/var/www/html:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
-      - frontend
-      - backend
+      frontend:
+        ipv4_address: 172.X.X.X #CHANGEME
+      backend:
     depends_on:
       - app
 
@@ -130,7 +134,8 @@ services:
     environment:
       # I think these are still needed because it's behind the proxy
       - extra_params=--o:ssl.enable=false --o:ssl.termination=true
-      - aliasgroup1=https://cloud\.example\.tld:443
+      - aliasgroup1=https://cloud\.example\.tld:443 #CHANGEME
       - dictionaries="en_US es_ES de_DE"
     networks:
-      - frontend
+      frontend:
+        ipv4_address: 172.X.X.X #CHANGEME
