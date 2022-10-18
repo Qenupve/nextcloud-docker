@@ -102,6 +102,9 @@ services:
     image: nc_app_img
     container_name: ${PREFIX}cron${SUFFIX}
     restart: unless-stopped
+    # init to take care of zombies from workflow scripts
+    init: true
+    entrypoint: /cron.sh
     volumes:
       - ./nc_html:/var/www/html
       - ${VOLS}/data:/nc_data
@@ -109,8 +112,6 @@ services:
       - ./scripts:/opt
     networks:
       - backend
-    # tini to take care of zombies from workflow scripts
-    entrypoint: ["/sbin/tini", "--", "/cron.sh"]
     depends_on:
       - db
       - redis

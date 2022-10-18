@@ -1,4 +1,4 @@
-FROM nextcloud:24.0.4-fpm-alpine
+FROM nextcloud:24.0.6-fpm-alpine
 
 # NOTE (Qenupve) - taken from nextcloud/docker GitHub, in .examples/dockerfiles/full/fpm-alpine/Dockerfile
 RUN set -ex; \
@@ -8,7 +8,6 @@ RUN set -ex; \
         imagemagick \
         coreutils \
         bash \
-        tini \
         logrotate \
 # NOTE (Qenupve) - these were included in the example Dockerfile, but I don't think I need/want them
 #        procps \
