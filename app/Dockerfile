@@ -1,4 +1,4 @@
-FROM nextcloud:24.0.6-fpm-alpine
+FROM nextcloud:26.0.0-fpm-alpine
 
 # NOTE (Qenupve) - taken from nextcloud/docker GitHub, in .examples/dockerfiles/full/fpm-alpine/Dockerfile
 RUN set -ex; \

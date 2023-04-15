@@ -1,3 +1,3 @@
 * * * * * php -f /var/www/html/cron.php
 * * * * * /opt/image_rename_scan.sh >> /opt/log/image_rename.log 2>&1
-*/10 * * * * php occ preview:pre-generate
+*/10 * * * * php /var/www/html/occ preview:pre-generate >> /opt/log/preview_generate.log 2>&1
