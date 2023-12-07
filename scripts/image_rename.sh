@@ -154,7 +154,7 @@ case $MODE in
         OUT_BASE=$(dirname "$IN_PATH")
         if [ ! -z "$REL_PATH" ]; then
             # sed to correct relative paths for group folders, which is incorrectly reported by Workflow Script app as of v1.7.0
-            OUT_REL_BASE=$(dirname "$REL_PATH" | sed 's/__groupfolders\/[0-9]*\///')
+            OUT_REL_BASE=$(dirname "$REL_PATH" | sed 's/__groupfolders\/[0-9]*/All Pictures/')
             IN_REL_BASE="$OUT_REL_BASE"
         fi
         ;;
@@ -179,7 +179,6 @@ echo "##### Input file $IN_PATH #####"
 ######
 ### If Nextcloud user provided, get relevant info
 ######
-
 # CMDLINE_SETTINGS trumps dotfile, but if NC_USER is set then we need at least one of them
 if [ ! -z "$NC_USER" ] && [ "$CMDLINE_SETTINGS" != 1 ]; then
     if [ ! -f "$OUT_BASE/.rename_$NC_USER" ]; then
@@ -188,6 +187,7 @@ if [ ! -z "$NC_USER" ] && [ "$CMDLINE_SETTINGS" != 1 ]; then
         echo "the Nextcloud user $NC_USER has not configured renaming files in the folder $OUT_BASE"
         exit 0
     else
+        echo "dotfile exists at ${OUT_BASE}/.rename_${NC_USER}"
         if [ ! -z "$(grep ^APPEND "$OUT_BASE/.rename_$NC_USER")" ]; then
             APPEND="-$(grep ^APPEND "$OUT_BASE/.rename_$NC_USER" | cut -d "=" -f 2 | tr -dc [:alnum:])"
         fi
@@ -201,6 +201,10 @@ if [ ! -z "$NC_USER" ] && [ "$CMDLINE_SETTINGS" != 1 ]; then
             fi
         fi
     fi
+else
+    # TODO (Qenupve) should handle better when non-Nextcloud user uploads to a shared folder...
+    echo "Not uploaded by a Nextcloud user, skipping."
+    exit 0
 fi
 
 #######
@@ -423,11 +427,11 @@ if [ "$?" = 0 ]; then
     fi
 
     if [ ! -z "$IN_REL_BASE" ]; then
-        php /var/www/html/occ files:scan --path="$OUT_REL_FULLPATH"
+        php /var/www/html/occ files:scan --path="$NC_USER/files$OUT_REL_FULLPATH"
         # indicate base folder needs scanned to detect the absence of original file
         # Note that this might be slow if there are many other files in this base
-        if [ -z "$(grep "$IN_REL_BASE" /tmp/to_scan.txt )" ]; then
-            echo "$IN_REL_BASE" >> /tmp/to_scan.txt
+        if [ -z "$(grep "$NC_USER/files/$IN_REL_BASE" /tmp/to_scan.txt )" ]; then
+            echo "$NC_USER/files/$IN_REL_BASE" >> /tmp/to_scan.txt
         fi
     fi
 else
